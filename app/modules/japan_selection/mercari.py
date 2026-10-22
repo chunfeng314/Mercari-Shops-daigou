@@ -3,7 +3,7 @@ import json
 import re
 from urllib.parse import urlencode, urljoin, urlparse, urlunparse
 
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
+from playwright.sync_api import Error as PlaywrightError, Page, TimeoutError as PlaywrightTimeout
 
 
 class CollectionError(ValueError):
@@ -84,13 +84,26 @@ def search_url(query: str, available_only: bool = True, sort: str = "newest") ->
 CARD_EXTRACTOR = r"""anchors => anchors.map(a => {
   const card = a.closest('li') || a;
   const image = a.querySelector('img');
+  const source = a.querySelector('picture source');
+  const firstSrcset = value => value?.split(',')[0]?.trim().split(/\s+/)[0] || null;
+  const imageCandidates = [
+    image?.getAttribute('data-src'),
+    image?.getAttribute('data-original'),
+    image?.getAttribute('data-lazy-src'),
+    firstSrcset(image?.getAttribute('data-srcset')),
+    image?.currentSrc,
+    image?.getAttribute('src'),
+    firstSrcset(image?.getAttribute('srcset')),
+    firstSrcset(source?.getAttribute('srcset')),
+  ].filter(value => value && !value.startsWith('data:'));
+  const imageUrl = imageCandidates.length ? new URL(imageCandidates[0], location.href).href : null;
   const name = a.querySelector('[data-testid="thumbnail-item-name"], [data-testid="item-name"]');
   const price = a.querySelector('[data-testid="item-tile-price"], [data-testid="price"]');
   const text = price?.textContent || a.textContent || '';
   const amount = text.match(/[¥￥]\s*([\d,]+)/);
   return {url:a.href, title:(name?.textContent || image?.alt?.replace(/のサムネイル$/, '') || '').trim(),
     price:amount ? Number(amount[1].replaceAll(',', '')) : null,
-    image_url:image?.currentSrc || image?.src || null,
+    image_url:imageUrl,
     sold:/SOLD|売り切れ/i.test(card.textContent || '')};
 })"""
 
@@ -129,7 +142,11 @@ class MercariCollector:
                 return []
             raise CollectionError("未找到可读取的商品卡片。页面可能需要登录、验证或已改版，请人工检查。")
         try:
-            self.page.wait_for_function("() => [...document.querySelectorAll('a[data-testid=\"thumbnail-link\"]')].some(a => a.querySelector('img')?.getAttribute('src'))", timeout=3500)
+            self.page.wait_for_function("""() => [...document.querySelectorAll('a[href*=\"/item/\"],a[href*=\"/shops/product/\"],a[href*=\"mercari-shops.com/products/\"],a[href^=\"/products/\"]')].some(a => {
+              const image = a.querySelector('img');
+              const source = a.querySelector('picture source');
+              return !!(image && (image.currentSrc || image.getAttribute('src') || image.getAttribute('data-src') || image.getAttribute('data-original') || image.getAttribute('data-lazy-src') || image.getAttribute('srcset') || image.getAttribute('data-srcset') || source?.getAttribute('srcset')));
+            })""", timeout=5000)
         except PlaywrightTimeout:
             # A missing image does not invalidate a readable title and price.
             pass
@@ -155,7 +172,7 @@ class MercariCollector:
                     found[url] = result
                 if len(found) >= limit:
                     _, self.last_price_filter_stats = filter_minimum_price(list(scanned.values()))
-                    return list(found.values())[:limit]
+                    return self._fill_missing_card_images(list(found.values())[:limit])
             stagnant = stagnant + 1 if len(scanned) == before else 0
             if stagnant >= 2:
                 break
@@ -164,7 +181,28 @@ class MercariCollector:
             self.page.mouse.wheel(0, 700)
             self.page.wait_for_timeout(650)
         _, self.last_price_filter_stats = filter_minimum_price(list(scanned.values()))
-        return list(found.values())[:limit]
+        return self._fill_missing_card_images(list(found.values())[:limit])
+
+    def _fill_missing_card_images(self, items: list[dict]) -> list[dict]:
+        missing = [item for item in items if not item.get("image_url")]
+        if not missing:
+            return items
+        self.progress(f"搜索卡片有 {len(missing)} 件未读到图片，正在从商品详情补取")
+        for index, item in enumerate(missing, start=1):
+            self.checkpoint()
+            try:
+                detail = self.item(item["url"])[0]
+            except (CollectionError, PlaywrightError):
+                item["image_status"] = "missing"
+                continue
+            if detail.get("image_url"):
+                item["image_url"] = detail["image_url"]
+                item["images"] = detail.get("images", [])
+                item["image_status"] = "available"
+            else:
+                item["image_status"] = "missing"
+            self.progress(f"正在补取详情图片 {index}/{len(missing)}")
+        return items
 
     def search(self, query: str, limit: int = 20, available_only=True, sort="newest") -> list[dict]:
         self.open(search_url(query, available_only, sort))

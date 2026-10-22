@@ -216,18 +216,22 @@ def import_candidates(job_id: str, payload: ImportSelection, connection: sqlite3
     items = (job["result"] or {}).get("items", [])
     if len(set(payload.indexes)) != len(payload.indexes) or any(index < 0 or index >= len(items) for index in payload.indexes):
         raise HTTPException(422, "选择了无效或重复的商品索引")
-    imported, skipped = [], []
+    imported, skipped, images_updated = [], [], []
     for index in payload.indexes:
         item = items[index]
+        url = canonical_url(checked_url(item["url"], "item"))
+        existing = connection.execute("SELECT id,archived_at,japan_image_url FROM items WHERE japan_url=?", (url,)).fetchone()
+        if existing:
+            if not existing["japan_image_url"] and item.get("image_url"):
+                connection.execute("UPDATE items SET japan_image_url=? WHERE id=?", (item["image_url"], existing["id"]))
+                record_event(connection, "item", existing["id"], "japan_image_backfilled", {"job_id": job_id, "source_url": url})
+                images_updated.append({"index": index, "id": existing["id"]})
+            skipped.append({"index": index, "id": existing["id"], "archived": bool(existing["archived_at"])})
+            continue
         if not has_eligible_jpy_price(item.get("price")):
             price = item.get("price")
             reason = "price_unavailable" if price is None else "price_below_minimum"
             skipped.append({"index": index, "reason": reason, "price": price})
-            continue
-        url = canonical_url(checked_url(item["url"], "item"))
-        existing = connection.execute("SELECT id,archived_at FROM items WHERE japan_url=?", (url,)).fetchone()
-        if existing:
-            skipped.append({"index": index, "id": existing["id"], "archived": bool(existing["archived_at"])})
             continue
         candidate_id = uuid.uuid4().hex
         note = f"Mercari 页面采集：{job['result'].get('collected_at', now_iso())}"
@@ -238,7 +242,7 @@ def import_candidates(job_id: str, payload: ImportSelection, connection: sqlite3
         record_event(connection, "item", candidate_id, "imported", {"job_id": job_id, "source_url": url})
         imported.append({"index": index, "id": candidate_id})
     connection.commit()
-    return {"imported": imported, "skipped": skipped}
+    return {"imported": imported, "skipped": skipped, "images_updated": images_updated}
 
 
 @router.post("/api/automation/jobs/{job_id}/import-china-sources")

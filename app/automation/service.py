@@ -371,14 +371,21 @@ class AutomationService:
                 elif kind == "japan_shop":
                     items = collector.shop(payload["url"], payload.get("limit", 20))
                 elif kind == "japan_item":
-                    items, price_stats = filter_minimum_price(collector.item(payload["url"]))
+                    items = collector.item(payload["url"])
+                    _, price_stats = filter_minimum_price(items)
                     collector.last_price_filter_stats = price_stats
                 else:
                     raise ValueError("未知的采集任务")
                 price_filter = collector.last_price_filter_stats
             finally:
                 context.close()
-            return {"items": items, "count": len(items), "collected_at": now_iso(), "price_filter": price_filter}
+            return {
+                "items": items,
+                "count": len(items),
+                "image_missing_count": sum(1 for item in items if not item.get("image_url")),
+                "collected_at": now_iso(),
+                "price_filter": price_filter,
+            }
         if kind == "china_search":
             channel = payload.get("browser_channel", "chrome")
             browser_name = "Chrome" if channel == "chrome" else "Edge"
