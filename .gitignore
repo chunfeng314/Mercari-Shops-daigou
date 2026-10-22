@@ -1,0 +1,17 @@
+.venv/
+.venv-win/
+output/
+.playwright-cli/
+__pycache__/
+*.py[cod]
+.env
+data/*.sqlite3
+data/*.sqlite3-*
+data/*.log
+data/shop-profile.json
+data/image_assets/
+data/browser_profiles/
+playwright/.auth/
+playwright/.profiles/
+storage_state*.json
+.DS_Store

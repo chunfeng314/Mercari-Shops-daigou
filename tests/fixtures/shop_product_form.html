@@ -1,0 +1,27 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><body>
+<h1>商品管理</h1>
+<input type="file" accept="image/*,.jpeg,.jpg,.png" multiple>
+<label for="name">商品名</label><input name="name" id="generated-title" maxlength="130">
+<textarea name="description" maxlength="3000"></textarea>
+<div data-testid="condition-select-box" onclick="openCondition()">選択してください</div>
+<div data-testid="categories" onclick="openCategories(0)">選択してください</div>
+<div id="category-specific-fields"></div>
+<input type="checkbox" name="preOrder.enabled">
+<input name="variants.0.quantity" type="number" value="1">
+<input name="variants.0.maxQuantityPerOrder" type="number">
+<input name="variants.0.janCode"><input name="variants.0.skuCode">
+<select name="shippingMethodType.id"><option value="">選択</option><option value="METHOD_MERCARI_SHIPPING_YAMATO">らくらくメルカリ便</option></select>
+<select name="shippingPayerType.id" disabled><option value="PAYER_TYPE_SELLER">送料込み(出品者負担)</option></select>
+<select name="shippingFromState.id"><option value="">選択</option><option value="jp13">東京都</option></select>
+<select name="shippingDurationType.id"><option value="">選択</option><option value="DURATION_TYPE_FOUR_TO_SEVEN">4〜7日で発送</option></select>
+<input name="price" oninput="this.value='¥'+this.value.replace(/\D/g,'')">
+<button onclick="document.querySelector('#notice').textContent='下書きを保存しました'">下書きへ保存する</button>
+<button onclick="window.published=true">公開設定に進む</button>
+<p id="notice"></p><div role="dialog" hidden></div>
+<script>
+const dialog = document.querySelector('[role=dialog]');
+const categories=['ゲーム・おもちゃ・グッズ','キャラクターグッズ','カード・フォト・ブロマイド'];
+function openCondition(){dialog.hidden=false;dialog.innerHTML='<ul><li><p>新品、未使用</p></li><li><p>やや傷や汚れあり</p></li></ul>';dialog.querySelectorAll('li').forEach(el=>el.onclick=()=>{document.querySelector('[data-testid=condition-select-box]').textContent=el.textContent;dialog.hidden=true;});}
+function openCategories(level){dialog.hidden=false;dialog.innerHTML='<ul><li>'+categories[level]+'</li></ul>';dialog.querySelector('li').onclick=()=>{if(level<2){openCategories(level+1);}else{document.querySelector('[data-testid=categories]').textContent=categories.join(' > ');dialog.hidden=true;document.querySelector('#category-specific-fields').innerHTML='<label>素材 必須<select name="attributes.material" required><option value="">選択してください</option><option value="pvc">PVC</option><option value="paper">紙</option></select></label>';}};}
+document.addEventListener('keydown',event=>{if(event.key==='Escape')dialog.hidden=true;});
+</script></body></html>

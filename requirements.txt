@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+playwright>=1.64.0,<2
+python-multipart
+Pillow
+tzdata
