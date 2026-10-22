@@ -1,11 +1,17 @@
 param(
     [string]$ShopId,
+    [string]$ShopProfileDirectory,
     [switch]$ConnectToWorkbench
 )
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$profileRoot = Join-Path $projectRoot 'data\browser_profiles\japan\shop-login'
+$profileRoot = if ($ShopProfileDirectory) {
+    $ShopProfileDirectory
+} else {
+    Join-Path $projectRoot 'data\browser_profiles\japan\shop-login'
+}
+$profileRoot = [System.IO.Path]::GetFullPath($profileRoot)
 $chromePath = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
 if (-not $ShopId) {
     $shopProfilePath = Join-Path $projectRoot 'data\shop-profile.json'
@@ -26,9 +32,13 @@ if (-not (Test-Path -LiteralPath $chromePath)) {
 
 # Use the same local Japanese route as the workbench, over HTTP. This Mihomo
 # listener accepts HTTP proxy traffic on the same local port as SOCKS5.
-$proxySetting = Get-Content -LiteralPath (Join-Path $projectRoot '.env') |
-    Where-Object { $_ -match '^JAPAN_BROWSER_PROXY=' } |
-    Select-Object -First 1
+$envPath = Join-Path $projectRoot '.env'
+$proxySetting = $null
+if (Test-Path -LiteralPath $envPath) {
+    $proxySetting = Get-Content -LiteralPath $envPath |
+        Where-Object { $_ -match '^JAPAN_BROWSER_PROXY=' } |
+        Select-Object -First 1
+}
 $proxyServer = 'http://127.0.0.1:10090'
 if ($proxySetting) {
     $rawProxy = ($proxySetting -split '=', 2)[1].Trim()

@@ -76,9 +76,9 @@ cp .env.example .env
 
 默认使用工作台专用 Chrome / Edge，由 Playwright 通过本地管道直接控制，不接管日常浏览器，因此正常任务不需要反复点击“允许控制”。首次在专用窗口登录后，Cookie 和站点存储保存在本机 `data/browser_profiles/`，关闭后重开仍可复用，直到平台要求重新登录或安全验证。该目录已加入 Git 忽略；程序不读取或复制日常 Chrome 的登录凭据。
 
-真实 Chrome 连接已于 2026-10-18 接入后台任务并验证。用户在已登录的 Chrome 155 打开 `chrome://inspect/#remote-debugging`，允许此浏览器实例远程调试并确认连接授权。应用通过 Playwright 的本地 `chrome` 通道连接，无需扩展；只选取配置中指定的店铺，使用独立任务标签填写，断开时保留用户浏览器。店铺地址与验证范围记录在 `data/shop-profile.json`。开发 CLI 连接可用 `detach` 结束，保留 Chrome 运行。
+Mercari Shops 设置窗口提供“打开 CDP Chrome 登录窗口”。工作台启动专用 Chrome 配置目录并启用只监听本机的 CDP；人工登录后，在任务结果中点击“已登录，连接店铺”，程序通过 CDP 验证指定店铺并复用会话。登录状态保存在 `data/browser_profiles/japan/shop-login`，店铺地址记录在本地 `data/shop-profile.json`。断开店铺会话不会关闭 Chrome 或清除登录状态。
 
-“手动接管日常浏览器”保留为备用模式，需要开启远程调试并允许连接。应用运行期间复用连接；服务重启后可能再次授权，这个备用模式不适合作为无人值守定时任务的默认方式。工作台专用浏览器的登录状态随配置目录保留，运行连接在重启后自动重新建立。
+也可以选择连接日常 Chrome / Edge，但需要用户在浏览器开启远程调试并授权；这与工作台专用的 CDP 登录窗口使用不同的浏览器配置目录。工作台专用登录状态可在服务重启后复用。
 
 闲鱼搜索词从日本平台采集的标题和说明中自动生成，不调用 AI、不要求手填关键词或闲鱼链接。默认在工作台专用浏览器搜索，导入后自动在同一会话采集货源详情图片；搜索、导入和图片任务沿用相同浏览器模式。自动图片保留为待核对候选，不凭页面文字认定实物图，并排除详情页推荐商品流。每条货源最多 10 张图片，每批最多处理 10 条货源。
 
@@ -98,6 +98,7 @@ cp .env.example .env
 - `GET /api/automation/jobs/{id}`；`POST .../{id}/resume`、`.../{id}/cancel`、`.../{id}/import`：查看、继续、取消任务或导入勾选结果。
 - `GET/POST /api/automation/watches`；`PATCH/DELETE /api/automation/watches/{id}`；`POST .../{id}/run`、`.../{id}/restore`；`GET .../{id}/changes`：管理 Mercari 采集监控和定时上架资料整理。归档后恢复默认暂停。
 - `POST /api/automation/browser/open`：打开工作台专用浏览器以完成首次登录，任务完成后保持窗口及登录状态。
+- `POST /api/automation/shops/cdp-browser/open`：打开隔离的 CDP Chrome 登录窗口并保存店铺连接设置；人工登录后从任务结果连接并接管店铺会话。
 - `POST/DELETE /api/automation/shops/session`：连接 / 断开店铺会话。真实浏览器断开后保留窗口与标签。等待中的任务可先取消，再关闭会话。
 - `POST /api/listing/drafts/{id}/fill-shop`、`POST /api/automation/shops/read-orders`：填写草稿 / 读取当前订单列表；填写分为资料确认、填表、核对保存两次确认，正式发布手动完成。
 - `GET /api/automation/shop-order-imports`；`POST .../{id}/confirm`：核对并关联读取到的店铺订单。

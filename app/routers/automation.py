@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import json
+import os
 import sqlite3
 import uuid
 
@@ -113,6 +114,27 @@ def open_managed_browser(payload: BrowserSessionTask, request: Request, connecti
 @router.post("/api/automation/browser/close", status_code=202)
 def close_managed_browser(payload: BrowserSessionTask, request: Request, connection: sqlite3.Connection = Depends(get_db)):
     return create_job(request, connection, "browser_close", payload.model_dump())
+
+
+@router.post("/api/automation/shops/cdp-browser/open", status_code=202)
+def open_shop_cdp_browser(payload: ShopTask, request: Request, connection: sqlite3.Connection = Depends(get_db)):
+    if os.name != "nt":
+        raise HTTPException(501, "CDP 登录浏览器启动目前仅支持 Windows 工作台")
+    requested = ShopTask(url=payload.url, browser_mode="existing_chrome", browser_channel="chrome")
+    values = checked_shop_task(requested, connection)
+    if not values["url"]:
+        raise HTTPException(422, "请先填写 Mercari Shops 店铺管理页面链接")
+    connection.execute(
+        "UPDATE shop_browser_settings SET browser_mode=?,browser_channel=?,url=? WHERE id=1",
+        ("existing_chrome", "chrome", values["url"]),
+    )
+    connection.commit()
+    shop_id = values["url"].rstrip("/").rsplit("/", 1)[-1]
+    return create_job(request, connection, "shop_cdp_open", {
+        "shop_id": shop_id,
+        "url": values["url"],
+        "browser_channel": "chrome",
+    })
 
 
 @router.get("/api/automation/shops/settings")

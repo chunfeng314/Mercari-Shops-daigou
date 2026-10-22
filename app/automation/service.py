@@ -4,10 +4,13 @@ from contextlib import contextmanager
 import base64
 import json
 import logging
+import os
 import sqlite3
+import subprocess
 import threading
 import time
 import uuid
+from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
 from playwright.sync_api import sync_playwright
@@ -166,6 +169,51 @@ class AutomationService:
             self.shop_context.close()
         self.shop_context = self.shop_page = None
 
+    def _open_shop_cdp_browser(self, payload, control):
+        if os.name != "nt":
+            raise ValueError("CDP 登录浏览器启动目前仅支持 Windows 工作台")
+        project_root = Path(__file__).resolve().parents[2]
+        script = project_root / "scripts" / "open-mercari-chrome.ps1"
+        if not script.is_file():
+            raise ValueError("未找到 Mercari CDP 浏览器启动脚本")
+        control.progress("正在启动启用 CDP 的独立 Chrome 登录窗口")
+        profile_root = settings.browser_profile_root
+        if not profile_root.is_absolute():
+            profile_root = project_root / profile_root
+        shop_profile_directory = (profile_root / "japan" / "shop-login").resolve()
+        command = [
+            "powershell.exe", "-NoProfile", "-WindowStyle", "Hidden",
+            "-ExecutionPolicy", "Bypass", "-File", str(script),
+            "-ShopId", payload["shop_id"],
+            "-ShopProfileDirectory", str(shop_profile_directory),
+            "-ConnectToWorkbench",
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=25,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise ValueError("CDP 浏览器启动超时，请检查 Chrome 或代理状态") from error
+        if completed.returncode:
+            detail = (completed.stderr or completed.stdout or "启动脚本执行失败").strip()
+            raise ValueError(detail[-1000:])
+        return {
+            "url": payload["url"],
+            "browser_mode": "existing_chrome",
+            "browser_channel": "chrome",
+            "cdp_enabled": True,
+            "login_state_persisted": True,
+            "note": "CDP Chrome 已开启。请在新窗口完成人工登录，再返回此任务点击“已登录，连接店铺”，工作台会验证并接管该店铺会话。",
+        }
+
     def _context(self):
         self._launch()
         context = self.browser.new_context(locale="ja-JP", timezone_id="Asia/Tokyo", viewport={"width": 1440, "height": 1000})
@@ -268,6 +316,8 @@ class AutomationService:
 
     def _execute(self, job, control):
         kind, payload = job["kind"], job["payload"]
+        if kind == "shop_cdp_open":
+            return self._open_shop_cdp_browser(payload, control)
         if kind == "browser_close":
             control.progress("正在关闭专用浏览器并保存本机登录状态")
             self.managed_browser.close(payload["scope"])
